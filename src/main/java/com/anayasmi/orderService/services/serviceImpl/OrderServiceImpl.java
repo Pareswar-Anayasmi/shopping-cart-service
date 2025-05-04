@@ -1,33 +1,25 @@
 package com.anayasmi.orderService.services.serviceImpl;
 
 import com.anayasmi.orderService.entities.*;
+import com.anayasmi.orderService.helpar.OrderPdfGenerator;
 import com.anayasmi.orderService.mapper.OrderServiceMapper;
 import com.anayasmi.orderService.models.request.OrderRequest;
+import com.anayasmi.orderService.models.request.OrderStatusUpdateRequest;
 import com.anayasmi.orderService.models.response.*;
 import com.anayasmi.orderService.repositories.*;
 import com.anayasmi.orderService.services.OrderService;
-import com.anayasmi.orderService.services.kafkaService.KafkaFileProcessService;
-import com.anayasmi.orderService.services.kafkaService.OrderStatusProducerService;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomStringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -50,9 +42,8 @@ public class OrderServiceImpl implements OrderService {
 
     private final ShippingAddressRepo shippingAddressRepo;
 
-    private final OrderStatusProducerService orderStatusProducerService;
-
-    private final KafkaFileProcessService kafkaFileProcessService;
+    @Autowired
+    private final OrderPdfGenerator orderPdfGenerator;
 
     public String generateShortOrderId() {
         String prefix = "ORD";
@@ -85,13 +76,11 @@ public class OrderServiceImpl implements OrderService {
             });
 
             order.setLineItems(lineItemRepo.saveAll(lineItems));
-            log.info("Order created successfully with OrderCustomId: {}", order.getOrderCustomId());
+            log.info("✅Order created successfully with OrderCustomId: {}", order.getOrderCustomId());
 
             OrderResponse orderResponse = orderServiceMapper.mapOrder(order);
-
-            //this method will store the response as a JSON.
-            this.saveOrderResponseToFile(orderResponse);
-
+            log.info("✅Order response sent to generate PDF.");
+            orderPdfGenerator.generateOrderPDF(orderResponse);
             return orderResponse;
 
         } catch (Exception ex) {
@@ -100,44 +89,8 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    private void saveOrderResponseToFile(OrderResponse order) {
-        try {
-            ObjectMapper objectMapper = new ObjectMapper();
-            // 1. Create formatter
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd h:mm a");
 
-            // 2. Create JavaTimeModule and add serializer with formatter
-            JavaTimeModule javaTimeModule = new JavaTimeModule();
-            javaTimeModule.addSerializer(LocalDateTime.class, new LocalDateTimeSerializer(formatter));
-
-            // 3. Register the module
-            objectMapper.registerModule(javaTimeModule);
-
-            // 4. Disable timestamps
-            objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-
-            // 5. Save file
-            String filename = "orders/order_" + order.getOrderCustomId() + "_" + System.currentTimeMillis() + ".json";
-            File file = new File(filename);
-            file.getParentFile().mkdirs(); // Ensure "orders/" folder is created
-            objectMapper.writerWithDefaultPrettyPrinter().writeValue(file, order);
-
-            //this will send the file to kafka.
-            kafkaFileProcessService.sendJsonFileToKafka(filename);
-            Path path = Paths.get(filename);
-            try {
-                // Delete the file if it exists
-                 Files.deleteIfExists(path);
-            } catch (IOException e) {
-                e.printStackTrace(); // You can use a logger here
-            }
-
-            log.info("OrderResponse saved to file: {}", filename);
-        } catch (Exception e) {
-            log.error("Failed to save OrderResponse to file", e);
-        }
-    }
-
+@Override
     public OrderResponse approveRejectOrder(Long id, String action) {
         try {
             Optional<Order> orderOptional = orderRepository.findByOrderId(id);
@@ -155,6 +108,28 @@ public class OrderServiceImpl implements OrderService {
             throw new RuntimeException("Failed to update order", ex);
         }
     }
+
+
+@Override
+    public String approveRejectOrderThrowKafka(OrderStatusUpdateRequest orderStatusUpdateRequest){
+    try {
+        Optional<Order> orderOptional = orderRepository.findByOrderId(orderStatusUpdateRequest.getOrderId());
+        if (orderOptional.isPresent()) {
+            Order order = orderOptional.get();
+            order.setOrderStatus(orderStatusUpdateRequest.getStatus());
+            orderRepository.save(order);
+            log.info("✅Order updated in posgress."+order.getOrderCustomId());
+        } else {
+            // Handle when order is not found
+            throw new RuntimeException("Order not found with ID: " + orderStatusUpdateRequest.getOrderId());
+        }
+
+    } catch (Exception ex) {
+        log.error("Error occurred while updating order: {}", ex.getMessage(), ex);
+        throw new RuntimeException("Failed to update order", ex);
+    }
+        return "updated";
+}
     @Override
     public List<OrderResponse> fetchAllOrder() {
         try {
@@ -166,9 +141,7 @@ public class OrderServiceImpl implements OrderService {
 
             log.info("Fetched {} orders successfully.", orders.size());
             List<OrderResponse> orderResponses = new ArrayList<>();
-            orders.forEach(order -> {
-                orderResponses.add(this.orderConverter(order));
-            });
+            orders.forEach(order -> orderResponses.add(this.orderConverter(order)));
             return orderResponses;
 
         } catch (Exception ex) {
@@ -186,7 +159,6 @@ public class OrderServiceImpl implements OrderService {
                 Order order = orderOptional.get();
                 return this.orderConverter(order);
             } else {
-                // Handle when order is not found
                 throw new RuntimeException("Order not found with ID: " + orderId);
             }
         } catch (Exception e) {
@@ -198,9 +170,7 @@ public class OrderServiceImpl implements OrderService {
     public OrderResponse orderConverter(Order order) {
         List<LineItemResponse> lineItemResponses = new ArrayList<>();
         if (order.getLineItems() != null) {
-            order.getLineItems().forEach(lineItem -> {
-                lineItemResponses.add(orderServiceMapper.lineItemMap(lineItem));
-            });
+            order.getLineItems().forEach(lineItem -> lineItemResponses.add(orderServiceMapper.lineItemMap(lineItem)));
         }
 
         return OrderResponse.builder()
@@ -276,5 +246,8 @@ public class OrderServiceImpl implements OrderService {
             throw new RuntimeException("Failed to fetch product", ex);
         }
     }
+
+
+
 
 }
