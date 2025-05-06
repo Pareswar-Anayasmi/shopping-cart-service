@@ -1,7 +1,5 @@
 package com.anayasmi.orderService.models.response;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Id;
 import lombok.*;
 import java.math.BigDecimal;
 @Setter

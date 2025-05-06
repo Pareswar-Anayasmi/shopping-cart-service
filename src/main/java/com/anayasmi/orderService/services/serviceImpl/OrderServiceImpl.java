@@ -118,7 +118,7 @@ public class OrderServiceImpl implements OrderService {
             Order order = orderOptional.get();
             order.setOrderStatus(orderStatusUpdateRequest.getStatus());
             orderRepository.save(order);
-            log.info("✅Order updated in posgress."+order.getOrderCustomId());
+            log.info("✅ "+order.getOrderCustomId()+" "+orderStatusUpdateRequest.getStatus()+" Successfully in posgress.");
         } else {
             // Handle when order is not found
             throw new RuntimeException("Order not found with ID: " + orderStatusUpdateRequest.getOrderId());

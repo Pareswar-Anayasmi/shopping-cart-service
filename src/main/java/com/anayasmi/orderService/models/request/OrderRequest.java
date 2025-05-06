@@ -1,11 +1,5 @@
 package com.anayasmi.orderService.models.request;
 
-import com.anayasmi.orderService.entities.Customer;
-import com.anayasmi.orderService.entities.Discount;
-import com.anayasmi.orderService.entities.Tax;
-import com.anayasmi.orderService.models.response.CustomerResponse;
-import com.anayasmi.orderService.models.response.DiscountResponse;
-import com.anayasmi.orderService.models.response.TaxResponse;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;

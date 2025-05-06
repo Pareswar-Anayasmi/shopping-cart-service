@@ -3,9 +3,6 @@ package com.anayasmi.orderService.entities;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.util.List;
-import java.util.Set;
-
 @Setter
 @Getter
 @AllArgsConstructor

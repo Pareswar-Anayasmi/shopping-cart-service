@@ -1,5 +1,6 @@
 HELP.md
 target/
+orders/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
@@ -18,6 +19,7 @@ target/
 *.iws
 *.iml
 *.ipr
+*.orders
 
 ### NetBeans ###
 /nbproject/private/
@@ -31,3 +33,4 @@ build/
 
 ### VS Code ###
 .vscode/
+/orders/
